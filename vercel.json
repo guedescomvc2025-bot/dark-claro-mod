@@ -20,45 +20,6 @@
           "value": "1; mode=block"
         }
       ]
-    },
-    {
-      "source": "/(.*)\\.(mp4|m3u8|ts|webm|ogg|mp3|wav)",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "video/mp4"
-        },
-        {
-          "key": "Content-Disposition",
-          "value": "inline"
-        }
-      ]
-    },
-    {
-      "source": "/(.*)\\.(m3u8)",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/x-mpegURL"
-        },
-        {
-          "key": "Content-Disposition",
-          "value": "inline"
-        }
-      ]
-    },
-    {
-      "source": "/(.*)\\.(ts)",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "video/MP2T"
-        },
-        {
-          "key": "Content-Disposition",
-          "value": "inline"
-        }
-      ]
     }
   ]
 }
