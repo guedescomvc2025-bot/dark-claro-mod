@@ -2046,11 +2046,11 @@
                 let streamUrl = '';
                 
                 if (type === 'live') {
-                    streamUrl = `${baseUrl}/live/${user}/${pass}/${playbackId}.${extension}`;
+                    streamUrl = `/api/stream/live/${user}/${pass}/${playbackId}.${extension}`;
                 } else if (type === 'vod') {
-                    streamUrl = `${baseUrl}/movie/${user}/${pass}/${playbackId}.${extension}`;
+                    streamUrl = `/api/stream/vod/${user}/${pass}/${playbackId}.${extension}`;
                 } else if (type === 'series') {
-                    streamUrl = `${baseUrl}/series/${user}/${pass}/${playbackId}.${extension}`;
+                    streamUrl = `/api/stream/series/${user}/${pass}/${playbackId}.${extension}`;
                 }
                 
                 // Configurar HLS.js para streams M3U8
