@@ -1,34 +1,69 @@
 const express = require('express');
-const path = require('path');
 const cors = require('cors');
 const { createProxyMiddleware } = require('http-proxy-middleware');
+const path = require('path');
 
 const app = express();
-const port = 3000;
+const PORT = process.env.PORT || 3000;
 
-// Habilitar CORS para todas as rotas
+// Middleware
 app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Servir arquivos estáticos
-app.use(express.static(path.join(__dirname, '.')));
-
-// Proxy para a API do Xtream (para evitar CORS localmente)
-app.use('/proxy', createProxyMiddleware({
-  target: '',
+// Proxy para streams de vídeo
+app.use('/api/stream', createProxyMiddleware({
+  target: 'http://localhost:8080', // URL do servidor Xtream (será substituída dinamicamente)
   changeOrigin: true,
   pathRewrite: {
-    '^/proxy': '', // remove /proxy da URL
+    '^/api/stream': '', // Remove o prefixo /api/stream
   },
   onProxyReq: (proxyReq, req, res) => {
-    // Adicione cabeçalhos necessários aqui, se necessário
+    // Extrai informações da URL
+    const urlParts = req.url.split('/');
+    const type = urlParts[3]; // live, vod ou series
+    const username = urlParts[4];
+    const password = urlParts[5];
+    const streamId = urlParts[6].split('.')[0]; // Remove a extensão
+    
+    // Constrói a URL correta para o servidor Xtream
+    const xtreamServer = req.headers['x-xtream-server'] || 'http://localhost:8080';
+    let endpoint = '';
+    
+    if (type === 'live') {
+      endpoint = `/live/${username}/${password}/${streamId}.m3u8`;
+    } else if (type === 'vod') {
+      endpoint = `/movie/${username}/${password}/${streamId}.mp4`;
+    } else if (type === 'series') {
+      endpoint = `/series/${username}/${password}/${streamId}.mp4`;
+    }
+    
+    proxyReq.path = endpoint;
+    proxyReq.setHeader('Host', new URL(xtreamServer).host);
   },
+  onError: (err, req, res) => {
+    console.error('Proxy Error:', err);
+    res.status(500).send('Erro ao reproduzir o conteúdo');
+  }
 }));
 
-// Redirecionar todas as outras requisições para o index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+// Rota para salvar a URL do servidor Xtream
+app.post('/api/save-server', (req, res) => {
+  const { serverUrl } = req.body;
+  if (!serverUrl) {
+    return res.status(400).json({ error: 'URL do servidor não fornecida' });
+  }
+  
+  // Salva a URL do servidor em um cookie
+  res.cookie('xtreamServer', serverUrl, { maxAge: 86400000, httpOnly: true });
+  res.json({ success: true });
 });
 
-app.listen(port, () => {
-  console.log(`Servidor rodando em http://localhost:${port}`);
+// Rota principal para servir o index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
