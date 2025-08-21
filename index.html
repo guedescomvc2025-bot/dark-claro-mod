@@ -836,7 +836,7 @@
                         <!-- Categorias de séries serão inseridas aqui -->
                     </div>
                     <div class="content-grid" id="series-content">
-                        <!-- Séries serão inseridas aqui -->
+                        <!-- Séries serão inseridos aqui -->
                     </div>
                 </section>
                 <!-- Favoritos -->
@@ -1201,14 +1201,15 @@
         
         // Função para buscar dados da API
         async function fetchAPI(url) {
-            const CORS_PROXY = 'https://corsproxy.io/?';
+            // Usando o proxy CORS do AllOrigins que é mais adequado para streams
+            const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
             const REQUEST_TIMEOUT = 20000;
             
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
             
             try {
-                const response = await fetch(CORS_PROXY + url, { 
+                const response = await fetch(CORS_PROXY + encodeURIComponent(url), { 
                     signal: controller.signal, 
                     cache: 'no-store' 
                 });
@@ -1226,6 +1227,28 @@
             } catch (e) {
                 throw e;
             }
+        }
+        
+        // Função para carregar streams de vídeo
+        async function loadVideoStream(url) {
+            try {
+                // Tentar carregar diretamente primeiro
+                const response = await fetch(url, {
+                    method: 'HEAD',
+                    mode: 'cors',
+                    cache: 'no-store'
+                });
+                
+                if (response.ok) {
+                    return url;
+                }
+            } catch (e) {
+                console.error('Erro ao carregar stream diretamente:', e);
+            }
+            
+            // Se falhar, tentar com proxy CORS
+            const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+            return CORS_PROXY + encodeURIComponent(url);
         }
         
         // Função para filtrar conteúdo adulto
@@ -2053,103 +2076,136 @@
                     streamUrl = `${baseUrl}/series/${user}/${pass}/${playbackId}.${extension}`;
                 }
                 
-                // Configurar HLS.js para streams M3U8
-                if (Hls.isSupported() && streamUrl.includes('.m3u8')) {
-                    hlsInstance = new Hls({
-                        capLevelToPlayerSize: true,
-                        maxBufferLength: 45,
-                        maxMaxBufferLength: 90,
-                        enableWorker: true,
-                        startLevel: -1,
-                        fragLoadingRetryDelay: 1000,
-                        fragLoadingMaxRetry: 4,
-                        levelLoadingRetryDelay: 1000,
-                        levelLoadingMaxRetry: 4
-                    });
-                    
-                    hlsInstance.loadSource(streamUrl);
-                    hlsInstance.attachMedia(video);
-                    
-                    // Ajustar qualidade se especificada
-                    if (quality && quality !== 'auto') {
-                        // Mapear qualidade para nível
-                        const qualityMap = {
-                            'low': 0,
-                            'medium': 1,
-                            'high': 2,
-                            'hd': 3,
-                            'fullhd': 4,
-                            '4k': 5
-                        };
+                // Função para carregar o stream de vídeo
+                const loadVideoStream = async (url) => {
+                    try {
+                        // Tentar carregar diretamente primeiro
+                        const response = await fetch(url, {
+                            method: 'HEAD',
+                            mode: 'cors',
+                            cache: 'no-store'
+                        });
                         
-                        const level = qualityMap[quality] || -1;
-                        if (level >= 0) {
-                            hlsInstance.currentLevel = level;
+                        if (response.ok) {
+                            return url;
                         }
+                    } catch (e) {
+                        console.error('Erro ao carregar stream diretamente:', e);
                     }
                     
-                    // Tratamento de erros
-                    hlsInstance.on(Hls.Events.ERROR, (event, data) => {
-                        if (data.fatal) {
-                            switch (data.type) {
-                                case Hls.ErrorTypes.NETWORK_ERROR:
-                                case Hls.ErrorTypes.MEDIA_ERROR:
-                                    hlsInstance.destroy();
-                                    hlsInstance = null;
-                                    video.src = streamUrl;
-                                    video.play().catch(() => {
-                                        console.error("Falha ao iniciar reprodução");
-                                    });
-                                    break;
-                                default:
-                                    hlsInstance.destroy();
-                                    break;
+                    // Se falhar, tentar com proxy CORS
+                    const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+                    return CORS_PROXY + encodeURIComponent(url);
+                };
+                
+                // Carregar o stream de vídeo
+                loadVideoStream(streamUrl).then(finalUrl => {
+                    // Configurar HLS.js para streams M3U8
+                    if (Hls.isSupported() && finalUrl.includes('.m3u8')) {
+                        hlsInstance = new Hls({
+                            capLevelToPlayerSize: true,
+                            maxBufferLength: 45,
+                            maxMaxBufferLength: 90,
+                            enableWorker: true,
+                            startLevel: -1,
+                            fragLoadingRetryDelay: 1000,
+                            fragLoadingMaxRetry: 4,
+                            levelLoadingRetryDelay: 1000,
+                            levelLoadingMaxRetry: 4,
+                            // Adicionar configuração para CORS
+                            xhrSetup: function(xhr, url) {
+                                xhr.setRequestHeader('Access-Control-Allow-Origin', '*');
+                            }
+                        });
+                        
+                        hlsInstance.loadSource(finalUrl);
+                        hlsInstance.attachMedia(video);
+                        
+                        // Ajustar qualidade se especificada
+                        if (quality && quality !== 'auto') {
+                            // Mapear qualidade para nível
+                            const qualityMap = {
+                                'low': 0,
+                                'medium': 1,
+                                'high': 2,
+                                'hd': 3,
+                                'fullhd': 4,
+                                '4k': 5
+                            };
+                            
+                            const level = qualityMap[quality] || -1;
+                            if (level >= 0) {
+                                hlsInstance.currentLevel = level;
                             }
                         }
-                    });
-                } else {
-                    video.src = streamUrl;
-                }
-                
-                // Inicializar Plyr
-                playerInstance = new Plyr(video, {
-                    settings: ['quality', 'speed', 'loop', 'pip'],
-                    i18n: {
-                        "speed": "Velocidade",
-                        "settings": "Ajustes",
-                        "controls": "Controles",
-                        "pip": "Picture-in-Picture"
-                    },
-                    tooltips: { controls: true }
-                });
-                
-                // Configurar eventos do player
-                playerInstance.on('ready', () => {
-                    // Adicionar botões personalizados
-                    addCustomControls(playerInstance);
+                        
+                        // Tratamento de erros
+                        hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+                            if (data.fatal) {
+                                switch (data.type) {
+                                    case Hls.ErrorTypes.NETWORK_ERROR:
+                                    case Hls.ErrorTypes.MEDIA_ERROR:
+                                        hlsInstance.destroy();
+                                        hlsInstance = null;
+                                        video.src = finalUrl;
+                                        video.play().catch(() => {
+                                            console.error("Falha ao iniciar reprodução");
+                                        });
+                                        break;
+                                    default:
+                                        hlsInstance.destroy();
+                                        break;
+                                }
+                            }
+                        });
+                    } else {
+                        // Para vídeos não HLS, tentar carregar diretamente
+                        video.src = finalUrl;
+                    }
                     
-                    // Iniciar reprodução
-                    playerInstance.play();
-                });
-                
-                // Definir tempo inicial se especificado
-                if (item.currentTime > 0) {
-                    playerInstance.once('canplay', () => {
-                        playerInstance.currentTime = item.currentTime;
+                    // Inicializar Plyr
+                    playerInstance = new Plyr(video, {
+                        settings: ['quality', 'speed', 'loop', 'pip'],
+                        i18n: {
+                            "speed": "Velocidade",
+                            "settings": "Ajustes",
+                            "controls": "Controles",
+                            "pip": "Picture-in-Picture"
+                        },
+                        tooltips: { controls: true }
                     });
-                }
-                
-                // Salvar progresso para conteúdo não ao vivo
-                if (type !== 'live') {
-                    const progressInterval = setInterval(() => {
-                        savePlaybackProgress(playerInstance, item, playbackId, type);
-                    }, 5000);
                     
-                    // Limpar intervalo quando o player for destruído
-                    playerInstance.on('destroy', () => {
-                        clearInterval(progressInterval);
+                    // Configurar eventos do player
+                    playerInstance.on('ready', () => {
+                        // Adicionar botões personalizados
+                        addCustomControls(playerInstance);
+                        
+                        // Iniciar reprodução
+                        playerInstance.play();
                     });
-                }
+                    
+                    // Definir tempo inicial se especificado
+                    if (item.currentTime > 0) {
+                        playerInstance.once('canplay', () => {
+                            playerInstance.currentTime = item.currentTime;
+                        });
+                    }
+                    
+                    // Salvar progresso para conteúdo não ao vivo
+                    if (type !== 'live') {
+                        const progressInterval = setInterval(() => {
+                            savePlaybackProgress(playerInstance, item, playbackId, type);
+                        }, 5000);
+                        
+                        // Limpar intervalo quando o player for destruído
+                        playerInstance.on('destroy', () => {
+                            clearInterval(progressInterval);
+                        });
+                    }
+                }).catch(error => {
+                    console.error("Erro ao carregar stream de vídeo:", error);
+                    showError("Erro ao carregar o vídeo. Tente novamente mais tarde.");
+                });
                 
             } catch (error) {
                 console.error("Erro ao configurar player:", error);
